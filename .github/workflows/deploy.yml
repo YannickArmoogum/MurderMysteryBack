@@ -1,0 +1,64 @@
+name: Deploy to AWS App Runner
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Required for GitHub OIDC -> AWS IAM role assumption (no long-lived keys).
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}        # e.g. murder-mystery-api
+  APP_RUNNER_SERVICE_ARN: ${{ vars.APP_RUNNER_SERVICE_ARN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE_URI="$REGISTRY/$ECR_REPOSITORY"
+          docker build -t "$IMAGE_URI:${{ github.sha }}" -t "$IMAGE_URI:latest" .
+          docker push "$IMAGE_URI:${{ github.sha }}"
+          docker push "$IMAGE_URI:latest"
+
+      - name: Trigger App Runner deployment
+        run: |
+          aws apprunner start-deployment \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --region "$AWS_REGION"
+
+      - name: Wait for deployment to reach RUNNING
+        run: |
+          for i in $(seq 1 40); do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --region "$AWS_REGION" \
+              --query 'Service.Status' --output text)
+            echo "App Runner status: $STATUS"
+            case "$STATUS" in
+              RUNNING) echo "Deployment succeeded."; exit 0 ;;
+              CREATE_FAILED|DELETE_FAILED|PAUSED) echo "Deployment failed."; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "Timed out waiting for RUNNING."; exit 1
