@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and fill in. (terraform.tfvars is gitignored — keep secrets out of git.)
+
+aws_region   = "eu-west-1"
+github_repo  = "OWNER/MurderMystery"   # exactly as on GitHub, e.g. yannickarmoo/MurderMystery
+frontend_url = "https://your-frontend.example.com"
+
+anthropic_api_key = "sk-ant-..."
+# hf_token        = ""
+
+# If the GitHub OIDC provider already exists in this AWS account, set:
+# create_oidc_provider = false
