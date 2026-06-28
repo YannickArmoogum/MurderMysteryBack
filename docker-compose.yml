@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mystery}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mystery}
+      POSTGRES_DB: ${POSTGRES_DB:-mystery}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mystery} -d ${POSTGRES_DB:-mystery}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # App uses DATABASE_URL; point it at the bundled Postgres service.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-mystery}:${POSTGRES_PASSWORD:-mystery}@db:5432/${POSTGRES_DB:-mystery}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      HF_TOKEN: ${HF_TOKEN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
+      PORT: 8000
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

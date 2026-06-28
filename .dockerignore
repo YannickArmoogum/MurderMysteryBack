@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+wheels/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Secrets & local config
+.env
+*.env.local
+
+# Local SQLite database (use a real DB in containers)
+*.db
+murder_mystery.db
+
+# IDE / tooling
+.idea/
+.vscode/
+.claude/
+
+# VCS
+.git/
+.gitignore
+
+# OS noise
+.DS_Store
+
+# Docs / misc that don't belong in the image
+README.md
