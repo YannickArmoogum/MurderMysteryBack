@@ -9,3 +9,11 @@ anthropic_api_key = "sk-ant-..."
 
 # If the GitHub OIDC provider already exists in this AWS account, set:
 # create_oidc_provider = false
+
+# --- Frontend (S3 + CloudFront) -------------------------------------------
+# Frontend repo for the CI deploy role (S3 upload + CloudFront invalidation):
+# frontend_github_repo = "OWNER/Creative-Website-Redesign"
+
+# Custom domain (optional). Leave both empty to use the default CloudFront URL.
+# domain_name       = "play.example.com"
+# route53_zone_name = "example.com"   # set only if DNS is hosted in Route 53 here

@@ -73,6 +73,9 @@ resource "aws_cloudfront_distribution" "frontend" {
   comment             = "${var.name} frontend"
   price_class         = "PriceClass_100"
 
+  # Custom domain(s), when configured in custom_domain.tf.
+  aliases = local.enable_custom_domain ? [var.domain_name] : null
+
   # Origin 1: S3 static site
   origin {
     origin_id                = "s3-frontend"
@@ -127,7 +130,10 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = local.enable_custom_domain ? null : true
+    acm_certificate_arn            = local.enable_custom_domain ? local.frontend_cert_arn : null
+    ssl_support_method             = local.enable_custom_domain ? "sni-only" : null
+    minimum_protocol_version       = local.enable_custom_domain ? "TLSv1.2_2021" : null
   }
 }
 

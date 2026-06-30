@@ -23,7 +23,7 @@ async def generate_stream(req: GenerateRequest, session: Session = Depends(get_s
 async def generate(req: GenerateRequest, session: Session = Depends(get_session)):
     """Non-streaming full generation (no images, no audio)."""
     builder = PromptBuilder(session)
-    theme_name, setting = builder.theme_info(req.theme)
+    theme_name, setting = builder.theme_info(req.theme, req.language)
     try:
         raw = await generate_mystery_raw(req, session)
     except Exception as exc:

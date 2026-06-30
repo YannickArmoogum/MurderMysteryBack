@@ -9,6 +9,11 @@ ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:4200")
 PORT: int = int(os.environ.get("PORT", "8000"))
 
+# Max character-dossier LLM calls to run at once. Caps the fan-out so large casts
+# don't trigger Anthropic rate-limit (429) retry storms; later waves also reuse the
+# warmed prompt cache. Tune to your account's rate limits.
+LLM_MAX_CONCURRENCY: int = int(os.environ.get("LLM_MAX_CONCURRENCY", "8"))
+
 # Model IDs
 LLM_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"  # kept for reference
 CLAUDE_LLM_MODEL = "claude-haiku-4-5-20251001"      # fast/cheap: mystery JSON, hints

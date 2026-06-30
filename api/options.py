@@ -8,10 +8,10 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/difficulties", operation_id="getDifficulties")
-def get_difficulties(session: Session = Depends(get_session)):
-    return OptionsRepository(session).get_difficulties()
+def get_difficulties(lang: str = "en", session: Session = Depends(get_session)):
+    return OptionsRepository(session).list_difficulties_localized(lang)
 
 
 @router.get("/tones", operation_id="getTones")
-def get_tones(session: Session = Depends(get_session)):
-    return OptionsRepository(session).get_tones()
+def get_tones(lang: str = "en", session: Session = Depends(get_session)):
+    return OptionsRepository(session).list_tones_localized(lang)

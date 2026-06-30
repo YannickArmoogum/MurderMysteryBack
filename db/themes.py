@@ -6,7 +6,10 @@ from db.models import Theme
 
 
 class ThemesRepository:
-    UPDATABLE = {"label", "era", "icon", "setting", "icon_image_url"}
+    UPDATABLE = {
+        "label", "era", "icon", "setting", "icon_image_url",
+        "label_fr", "era_fr", "setting_fr",
+    }
 
     def __init__(self, session: Session):
         self.session = session
@@ -16,6 +19,26 @@ class ThemesRepository:
 
     def get_by_id(self, theme_id: str) -> Theme | None:
         return self.session.get(Theme, theme_id)
+
+    @staticmethod
+    def localize(theme: Theme, language: str = "en") -> dict:
+        """Serialize a theme, swapping in French fields when language='fr' (and present)."""
+        fr = (language or "en").lower() == "fr"
+        return {
+            "id": theme.id,
+            "label": theme.label_fr if fr and theme.label_fr else theme.label,
+            "era": theme.era_fr if fr and theme.era_fr else theme.era,
+            "icon": theme.icon,
+            "setting": theme.setting_fr if fr and theme.setting_fr else theme.setting,
+            "icon_image_url": theme.icon_image_url,
+        }
+
+    def list_localized(self, language: str = "en") -> list[dict]:
+        return [self.localize(t, language) for t in self.get_all()]
+
+    def get_localized(self, theme_id: str, language: str = "en") -> dict | None:
+        theme = self.get_by_id(theme_id)
+        return self.localize(theme, language) if theme else None
 
     def create(self, theme_id: str, label: str, era: str = "",
                icon: str = "🎭", setting: str = "") -> Theme:

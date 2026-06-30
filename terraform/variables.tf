@@ -41,6 +41,24 @@ variable "frontend_url" {
   default     = "http://localhost:4200"
 }
 
+variable "domain_name" {
+  description = "Custom domain for the frontend (e.g. 'play.example.com'). Empty = use the default CloudFront domain."
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_name" {
+  description = "Route 53 hosted zone name (e.g. 'example.com') if the domain's DNS is in this account. Empty = external DNS (manual validation)."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_github_repo" {
+  description = "Frontend GitHub repo in 'owner/name' form for the CI deploy role. Empty = no frontend CI role."
+  type        = string
+  default     = ""
+}
+
 variable "image_tag" {
   description = "ECR image tag App Runner deploys. The CI pipeline pushes 'latest'."
   type        = string

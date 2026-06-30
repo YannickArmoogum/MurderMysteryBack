@@ -5,13 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from core.config import config
 from db.db_manager import DbManager
-from api import health, generate, hints, media, options, scenarios, settings, themes, customize, test
+from api import health, generate, hints, media, options, scenarios, settings, themes, customize, test, edit, shares
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = DbManager(url=config.DB_URL)
     app.state.db = db
+    # Ensure the card-share table exists (not part of the alembic migration set).
+    from db.models import CardShare
+    CardShare.__table__.create(bind=db.engine, checkfirst=True)
     yield
     db.engine.dispose()
 
@@ -36,6 +39,8 @@ app.include_router(settings.router)
 app.include_router(themes.router)
 app.include_router(customize.router)
 app.include_router(test.router)
+app.include_router(edit.router)
+app.include_router(shares.router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=config.PORT, reload=True)

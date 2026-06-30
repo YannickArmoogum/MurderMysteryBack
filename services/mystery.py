@@ -19,6 +19,7 @@ from core.schemas.schemas import (
     TimelineEvent,
     Victim,
 )
+from core.config import config
 from prompts import PromptBuilder, character_image_prompt, narration_prompt
 from services import llm as llm_svc
 from services import image as image_svc
@@ -160,12 +161,14 @@ def assemble_mystery(raw: dict, req: GenerateRequest, theme_name: str, setting: 
     )
 
 
-async def _expand_character(skeleton: dict, char: dict, executor: ThreadPoolExecutor) -> dict:
+async def _expand_character(
+    skeleton: dict, char: dict, executor: ThreadPoolExecutor, language: str = "en"
+) -> dict:
     """Run one dossier call and merge its rich fields onto the character skeleton."""
     merged = {k: v for k, v in char.items() if k != "brief"}
     try:
         dossier = await asyncio.get_event_loop().run_in_executor(
-            executor, llm_svc.generate_character_dossier, skeleton, char
+            executor, llm_svc.generate_character_dossier, skeleton, char, language
         )
         if isinstance(dossier, dict):
             merged.update(dossier)
@@ -175,35 +178,76 @@ async def _expand_character(skeleton: dict, char: dict, executor: ThreadPoolExec
 
 
 def _dossier_executor(char_count: int) -> ThreadPoolExecutor:
-    """A thread pool wide enough to run every dossier call concurrently."""
-    return ThreadPoolExecutor(max_workers=max(1, char_count))
+    """Thread pool for the dossier fan-out, capped at LLM_MAX_CONCURRENCY.
+
+    Capping the workers bounds how many dossier calls hit Anthropic at once: it
+    avoids rate-limit (429) retry storms on large casts, and any wave after the
+    first reuses the prompt cache the earlier wave warmed.
+    """
+    workers = max(1, min(char_count, config.LLM_MAX_CONCURRENCY))
+    return ThreadPoolExecutor(max_workers=workers)
+
+
+async def _resolve_production(production_future, core: dict, language: str) -> dict:
+    """Await the concurrent production pass; if it failed under load, retry once.
+
+    Production (acts/evidence/GM guide/reveal) runs concurrently with the dossier
+    fan-out. If that wave briefly rate-limits the API, the single production call can
+    fail — and silently dropping it leaves the GM Guide and Evidence empty. By the
+    time we get here the dossiers are done, so a one-shot retry runs with the load
+    cleared and reliably fills those sections back in.
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        production = await production_future
+    except Exception as exc:
+        print(f"Production generation failed, retrying: {exc}")
+        try:
+            production = await loop.run_in_executor(
+                None, llm_svc.generate_production, core, language
+            )
+        except Exception as exc2:
+            print(f"Production retry failed: {exc2}")
+            production = {}
+    return production or {}
 
 
 async def generate_mystery_raw(req: GenerateRequest, session: Session) -> dict:
-    """Chained generation: stage-1 blueprint, then fan-out parallel character dossiers.
+    """Chained generation: fast core blueprint, then fan-out dossiers while the
+    act/evidence/GM/reveal material is written in parallel.
 
-    Returns a single raw mystery dict (skeleton + expanded characters) ready for
-    `assemble_mystery`. Splitting the work this way turns one long sequential
-    generation into a short blueprint plus N dossier calls that run concurrently,
-    so wall-clock time scales with the slowest single character, not the whole cast.
+    Critical path is core + slowest dossier wave; the heavier "production" content
+    (acts, evidence, GM guide, reveal) overlaps the dossier fan-out instead of
+    sitting in front of it, so wall-clock barely grows with cast size.
     """
+    loop = asyncio.get_event_loop()
     builder = PromptBuilder(session)
-    user_msg = builder.mystery_user_message(req.theme, req.playerCount, req.difficulty, req.tone)
-
-    skeleton = await asyncio.get_event_loop().run_in_executor(
-        None, llm_svc.generate_mystery_skeleton, user_msg
+    user_msg = builder.mystery_user_message(
+        req.theme, req.playerCount, req.difficulty, req.tone, req.language
     )
 
-    skeleton_chars = skeleton.get("characters") or []
-    executor = _dossier_executor(len(skeleton_chars))
+    # Stage 1a — small, fast, gates the dossiers.
+    core = await loop.run_in_executor(None, llm_svc.generate_core_blueprint, user_msg)
+
+    core_chars = core.get("characters") or []
+
+    # Stage 1b — runs concurrently with the dossier fan-out.
+    production_future = asyncio.ensure_future(
+        loop.run_in_executor(None, llm_svc.generate_production, core, req.language)
+    )
+
+    executor = _dossier_executor(len(core_chars))
     try:
         expanded = await asyncio.gather(
-            *(_expand_character(skeleton, c, executor) for c in skeleton_chars)
+            *(_expand_character(core, c, executor, req.language) for c in core_chars)
         )
     finally:
         executor.shutdown(wait=False)
-    skeleton["characters"] = list(expanded)
-    return skeleton
+
+    production = await _resolve_production(production_future, core, req.language)
+
+    raw = {**core, **production, "characters": list(expanded)}
+    return raw
 
 
 async def mystery_stream_generator(req: GenerateRequest, session: Session) -> AsyncGenerator[str, None]:
@@ -213,36 +257,43 @@ async def mystery_stream_generator(req: GenerateRequest, session: Session) -> As
 
     try:
         builder = PromptBuilder(session)
-        theme_name, setting = builder.theme_info(req.theme)
+        theme_name, setting = builder.theme_info(req.theme, req.language)
 
         yield sse({"step": "prompt", "message": "Crafting the mystery premise...", "progress": 5})
         await asyncio.sleep(0)
 
-        user_msg = builder.mystery_user_message(req.theme, req.playerCount, req.difficulty, req.tone)
+        user_msg = builder.mystery_user_message(
+            req.theme, req.playerCount, req.difficulty, req.tone, req.language
+        )
 
         yield sse({"step": "llm", "message": "Designing the mystery blueprint with Claude...", "progress": 10})
         await asyncio.sleep(0)
 
-        # Stage 1 — fast blueprint (facts, timeline, structure, character skeletons).
-        skeleton = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: llm_svc.generate_mystery_skeleton(user_msg)
-        )
+        loop = asyncio.get_event_loop()
 
-        skeleton_chars = skeleton.get("characters") or []
-        total_chars = len(skeleton_chars) or 1
+        # Stage 1a — fast core blueprint (facts, timeline, character skeletons).
+        core = await loop.run_in_executor(None, llm_svc.generate_core_blueprint, user_msg)
+
+        core_chars = core.get("characters") or []
+        total_chars = len(core_chars) or 1
         yield sse({
             "step": "blueprint_done",
-            "message": f"Blueprint ready. Writing {len(skeleton_chars)} character dossiers in parallel...",
+            "message": f"Blueprint ready. Writing {len(core_chars)} character dossiers in parallel...",
             "progress": 25,
         })
         await asyncio.sleep(0)
 
+        # Stage 1b — acts/evidence/GM/reveal, generated concurrently with the dossiers.
+        production_future = asyncio.ensure_future(
+            loop.run_in_executor(None, llm_svc.generate_production, core, req.language)
+        )
+
         # Stage 2 — fan out one dossier call per character; stream progress as each lands.
-        executor = _dossier_executor(len(skeleton_chars))
+        executor = _dossier_executor(len(core_chars))
         try:
             dossier_tasks = [
-                asyncio.ensure_future(_expand_character(skeleton, c, executor))
-                for c in skeleton_chars
+                asyncio.ensure_future(_expand_character(core, c, executor, req.language))
+                for c in core_chars
             ]
             expanded: list[dict] = []
             for i, fut in enumerate(asyncio.as_completed(dossier_tasks)):
@@ -250,18 +301,20 @@ async def mystery_stream_generator(req: GenerateRequest, session: Session) -> As
                 pct = 25 + int(20 * (i + 1) / total_chars)
                 yield sse({
                     "step": "dossier_progress",
-                    "message": f"Character dossier {i + 1}/{len(skeleton_chars)} written",
+                    "message": f"Character dossier {i + 1}/{len(core_chars)} written",
                     "progress": pct,
                 })
                 await asyncio.sleep(0)
         finally:
             executor.shutdown(wait=False)
 
-        skeleton["characters"] = expanded
+        production = await _resolve_production(production_future, core, req.language)
+
+        raw = {**core, **production, "characters": expanded}
         yield sse({"step": "llm_done", "message": "Story & characters complete. Building output...", "progress": 45})
         await asyncio.sleep(0)
 
-        mystery = assemble_mystery(skeleton, req, theme_name, setting)
+        mystery = assemble_mystery(raw, req, theme_name, setting)
 
         yield sse({"step": "images", "message": "Generating character portraits (free)...", "progress": 50})
         await asyncio.sleep(0)

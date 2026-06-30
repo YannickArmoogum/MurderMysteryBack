@@ -11,6 +11,56 @@ class GenerateRequest(BaseModel):
     playerCount: int = Field(ge=6, le=14)
     difficulty: Literal["casual", "challenging", "expert"]
     tone: Literal["dramatic", "dark", "romantic", "satirical"]
+    language: Literal["en", "fr"] = "en"  # language for all generated player-facing text
+
+
+class RegenerateFieldRequest(BaseModel):
+    """Re-prompt a single field of already-generated content (edit-by-AI)."""
+    field: str                                   # which field to rewrite
+    context: dict                                # surrounding content (e.g. the character dossier)
+    guidance: Optional[str] = None               # optional author instruction
+    language: Literal["en", "fr"] = "en"
+
+
+class RegenerateFieldResponse(BaseModel):
+    field: str
+    value: Any                                   # str or list[str], matching the original field
+
+
+# ── Card sharing (email-gated public link) ────────────────────────────────────
+
+class CreateShareRequest(BaseModel):
+    participantName: str
+    email: str
+    character: dict                              # the single character dossier
+    mysteryTitle: str = ""
+    timeline: List[dict] = []                    # shared mystery timeline for the card
+    portraitUrl: Optional[str] = None
+    language: Literal["en", "fr"] = "en"
+
+
+class CreateShareResponse(BaseModel):
+    token: str
+
+
+class ShareInfoResponse(BaseModel):
+    """Public, non-sensitive info shown on the locked page."""
+    mysteryTitle: str
+    language: str
+    locked: bool = True
+
+
+class UnlockShareRequest(BaseModel):
+    email: str
+
+
+class ShareCardResponse(BaseModel):
+    participantName: str
+    mysteryTitle: str
+    character: dict
+    timeline: List[dict]
+    portraitUrl: Optional[str] = None
+    language: str
 
 
 class CharacterImageRequest(BaseModel):

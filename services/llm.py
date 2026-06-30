@@ -7,11 +7,17 @@ from db.dependencies import get_anthropic_client
 from prompts import (
     mystery_system_prompt,
     skeleton_system_prompt,
+    core_blueprint_system_prompt,
+    production_system_prompt,
+    production_user_message,
     dossier_system_prompt,
     blueprint_context_message,
     dossier_user_message,
+    field_revision_system_prompt,
+    regenerate_field_user_message,
     user_guide_system_prompt,
     user_guide_user_message,
+    DOSSIER_JSON_SCHEMA,
 )
 
 
@@ -66,7 +72,63 @@ def generate_mystery_json(user_msg: str) -> dict:
 
     if response.stop_reason == "max_tokens":
         print("WARNING: mystery generation hit max_tokens — output may be truncated.")
-    print(response)
+    return _extract_json(response.content[0].text)
+
+
+def generate_core_blueprint(user_msg: str) -> dict:
+    """Stage 1a: generate only the core facts + thin character skeletons.
+
+    This is the critical-path call — it gates the per-character dossier fan-out.
+    Keeping it small (no acts/evidence/GM-guide/reveal) means dossiers start sooner;
+    the heavier structural content is generated in parallel (see generate_production).
+    """
+    client = get_anthropic_client()
+    system_blocks = [
+        {
+            "type": "text",
+            "text": core_blueprint_system_prompt(),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+    with client.messages.stream(
+        model=CLAUDE_LLM_MODEL,
+        max_tokens=4000,
+        system=system_blocks,
+        messages=[{"role": "user", "content": user_msg}],
+    ) as stream:
+        response = stream.get_final_message()
+
+    if response.stop_reason == "max_tokens":
+        print("WARNING: core blueprint hit max_tokens — output may be truncated.")
+    return _extract_json(response.content[0].text)
+
+
+def generate_production(core: dict, language: str = "en") -> dict:
+    """Stage 1b: acts + evidence + GM guide + reveal script, derived from the core facts.
+
+    Runs concurrently with the dossier fan-out (it needs the core blueprint, but the
+    dossiers don't need it), so its output stays off the critical path.
+    """
+    client = get_anthropic_client()
+    char_count = len(core.get("characters") or [])
+    min_evidence = max(6, char_count)
+    system_blocks = [
+        {
+            "type": "text",
+            "text": production_system_prompt(),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+    with client.messages.stream(
+        model=CLAUDE_LLM_MODEL,
+        max_tokens=8000,
+        system=system_blocks,
+        messages=[{"role": "user", "content": production_user_message(core, min_evidence, language)}],
+    ) as stream:
+        response = stream.get_final_message()
+
+    if response.stop_reason == "max_tokens":
+        print("WARNING: production generation hit max_tokens — output may be truncated.")
     return _extract_json(response.content[0].text)
 
 
@@ -97,7 +159,7 @@ def generate_mystery_skeleton(user_msg: str) -> dict:
     return _extract_json(response.content[0].text)
 
 
-def generate_character_dossier(skeleton: dict, character: dict) -> dict:
+def generate_character_dossier(skeleton: dict, character: dict, language: str = "en") -> dict:
     """Stage 2: expand a single character into a full dossier.
 
     Called once per character (in parallel). The static dossier schema and the
@@ -117,11 +179,16 @@ def generate_character_dossier(skeleton: dict, character: dict) -> dict:
             "cache_control": {"type": "ephemeral"},
         },
     ]
+    # Structured outputs: constrain the response to the dossier schema so it is
+    # always valid JSON. Avoids markdown fences and the parse failures that would
+    # otherwise silently drop a character's rich fields. 6K tokens headroom keeps a
+    # verbose dossier from truncating (which breaks the JSON even when constrained).
     with client.messages.stream(
         model=CLAUDE_LLM_MODEL,
-        max_tokens=4000,
+        max_tokens=6000,
         system=system_blocks,
-        messages=[{"role": "user", "content": dossier_user_message(character)}],
+        messages=[{"role": "user", "content": dossier_user_message(character, language)}],
+        output_config={"format": {"type": "json_schema", "schema": DOSSIER_JSON_SCHEMA}},
     ) as stream:
         response = stream.get_final_message()
 
@@ -151,9 +218,36 @@ def generate_user_guide(mystery_data: dict) -> dict:
         system=system_blocks,
         messages=[{"role": "user", "content": user_msg}],
     )
-    print("response",response)
     raw = response.content[0].text
     return _extract_json(raw)
+
+
+def regenerate_field(field: str, context: dict, guidance: str | None = None, language: str = "en"):
+    """Rewrite one field of existing content (edit-by-AI). Returns a str or list[str]
+    matching the original field's type. Uses a cached system prompt for cost savings."""
+    client = get_anthropic_client()
+    is_list = isinstance(context.get(field), list)
+    system_blocks = [
+        {
+            "type": "text",
+            "text": field_revision_system_prompt(),
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+    response = client.messages.create(
+        model=CLAUDE_LLM_MODEL,
+        max_tokens=1500,
+        system=system_blocks,
+        messages=[{"role": "user", "content": regenerate_field_user_message(field, context, guidance, language, is_list)}],
+    )
+    data = _extract_json(response.content[0].text)
+    value = data.get("value")
+    # Coerce to the original field's shape so the client always gets what it expects.
+    if is_list and not isinstance(value, list):
+        value = [] if value is None else [str(value)]
+    if not is_list and isinstance(value, list):
+        value = " ".join(str(v) for v in value)
+    return value
 
 
 def generate_hint(prompt: str) -> str:

@@ -9,9 +9,62 @@ from db.themes import ThemesRepository
 _DIR = Path(__file__).parent
 _MYSTERY_SCHEMA = (_DIR / "mystery_schema.txt").read_text(encoding="utf-8")
 _SKELETON_SCHEMA = (_DIR / "mystery_skeleton_schema.txt").read_text(encoding="utf-8")
+_CORE_SCHEMA = (_DIR / "core_blueprint_schema.txt").read_text(encoding="utf-8")
+_PRODUCTION_SCHEMA = (_DIR / "production_schema.txt").read_text(encoding="utf-8")
 _DOSSIER_SCHEMA = (_DIR / "character_dossier_schema.txt").read_text(encoding="utf-8")
 _GUIDE_SYSTEM = (_DIR / "guide_system.txt").read_text(encoding="utf-8")
 
+
+# JSON Schema for the per-character dossier (structured outputs). Constraining the
+# response to this shape guarantees valid JSON — no markdown fences, no truncated
+# parse failures that would silently drop a character's rich fields.
+_STR = {"type": "string"}
+_STR_LIST = {"type": "array", "items": {"type": "string"}}
+DOSSIER_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "publicIdentity": _STR,
+        "secretBackground": _STR,
+        "hiddenMotive": _STR,
+        "personalObjective": _STR,
+        "incriminatingClues": _STR_LIST,
+        "exculpatoryClues": _STR_LIST,
+        "alibi": _STR,
+        "secretOnlyTheyKnow": _STR,
+        "behaviouralGuideline": _STR,
+        "samplePhrases": _STR_LIST,
+        "symbolicDetail": _STR,
+    },
+    "required": [
+        "publicIdentity", "secretBackground", "hiddenMotive", "personalObjective",
+        "incriminatingClues", "exculpatoryClues", "alibi", "secretOnlyTheyKnow",
+        "behaviouralGuideline", "samplePhrases", "symbolicDetail",
+    ],
+    "additionalProperties": False,
+}
+
+
+
+_LANGUAGE_NAMES = {"en": "English", "fr": "French"}
+
+
+def language_directive(language: str | None) -> str:
+    """Instruction appended to generation prompts so all player-facing text is
+    written in the requested language. English is the default and adds nothing.
+
+    The JSON keys must stay exactly as specified (English) — only string VALUES
+    are translated — because the frontend reads the response by key.
+    """
+    lang = (language or "en").lower()
+    if lang == "en":
+        return ""
+    name = _LANGUAGE_NAMES.get(lang, "English")
+    return (
+        f"\n\nIMPORTANT — LANGUAGE: Write ALL player-facing content "
+        f"(title, tagline, names, descriptions, clues, dialogue, dossiers, GM notes, "
+        f"timeline events and the reveal script) in {name}. "
+        f"Keep every JSON key exactly as specified in English; translate only the string values."
+    )
 
 
 class PromptBuilder:
@@ -21,10 +74,13 @@ class PromptBuilder:
         self._opts = OptionsRepository(session)
         self._themes = ThemesRepository(session)
 
-    def theme_info(self, theme_id: str) -> tuple[str, str]:
-        """Return (theme_name, setting) for the given theme id."""
+    def theme_info(self, theme_id: str, language: str = "en") -> tuple[str, str]:
+        """Return (theme_name, setting) for the given theme id, localized by language."""
         theme = self._themes.get_by_id(theme_id)
-        return (theme.label, theme.setting) if theme else ("Custom Theme", "An Elegant Venue")
+        if not theme:
+            return ("Custom Theme", "An Elegant Venue")
+        loc = self._themes.localize(theme, language)
+        return (loc["label"], loc["setting"])
 
     def mystery_user_message(
         self,
@@ -32,12 +88,20 @@ class PromptBuilder:
         player_count: int,
         difficulty_id: str,
         tone_id: str,
+        language: str = "en",
     ) -> str:
-        theme_name, setting = self.theme_info(theme_id)
+        fr = (language or "en").lower() == "fr"
+        theme_name, setting = self.theme_info(theme_id, language)
         difficulty = self._opts.get_difficulty_by_id(difficulty_id)
         tone = self._opts.get_tone_by_id(tone_id)
-        difficulty_note = difficulty.description if difficulty else difficulty_id
-        tone_note = tone.description if tone else tone_id
+        difficulty_note = (
+            (difficulty.description_fr if fr and difficulty.description_fr else difficulty.description)
+            if difficulty else difficulty_id
+        )
+        tone_note = (
+            (tone.description_fr if fr and tone.description_fr else tone.description)
+            if tone else tone_id
+        )
         min_evidence = max(6, player_count)
         return (
             f"Generate a complete murder mystery for exactly {player_count} players.\n"
@@ -47,6 +111,7 @@ class PromptBuilder:
             f"TONE: {tone_id} — {tone_note}\n"
             f"Generate exactly {player_count} characters. "
             f"Include at least {min_evidence} evidence cards across all 3 acts."
+            + language_directive(language)
         )
 
 
@@ -61,9 +126,93 @@ def skeleton_system_prompt() -> str:
     return _SKELETON_SCHEMA
 
 
+def core_blueprint_system_prompt() -> str:
+    """Static system prompt for the core blueprint (facts + character skeletons)."""
+    return _CORE_SCHEMA
+
+
+def production_system_prompt() -> str:
+    """Static system prompt for acts/evidence/GM-guide/reveal generation (cacheable)."""
+    return _PRODUCTION_SCHEMA
+
+
+def _production_context(core: dict) -> dict:
+    """Canonical facts + full cast skeletons handed to the production pass.
+
+    Includes each character's brief (the reveal/evidence writer needs the killer's
+    motive and the timeline to stay consistent).
+    """
+    return {
+        "title": core.get("title"),
+        "themeName": core.get("themeName"),
+        "setting": core.get("setting"),
+        "victim": core.get("victim"),
+        "murderMethod": core.get("murderMethod"),
+        "storyOverview": core.get("storyOverview"),
+        "timeline": core.get("timeline", []),
+        "characters": [
+            {
+                "name": c.get("name"),
+                "role": c.get("role"),
+                "isKiller": bool(c.get("isKiller", False)),
+                "relationships": c.get("relationships", []),
+                "brief": c.get("brief", ""),
+            }
+            for c in core.get("characters", [])
+        ],
+    }
+
+
+def production_user_message(core: dict, min_evidence: int, language: str = "en") -> str:
+    """Per-mystery instruction for the production pass: write structure from the facts."""
+    return (
+        "CORE BLUEPRINT (binding canonical facts — do not contradict):\n"
+        f"{json.dumps(_production_context(core), ensure_ascii=False)}\n\n"
+        f"Write the acts, evidence (at least {min_evidence} cards across all 3 acts), "
+        "GM guide, and reveal script for this mystery."
+        + language_directive(language)
+    )
+
+
 def dossier_system_prompt() -> str:
     """Static system prompt for stage-2 per-character dossier generation (cacheable)."""
     return _DOSSIER_SCHEMA
+
+
+# ── Single-field revision (edit-by-AI) ────────────────────────────────────────
+
+def field_revision_system_prompt() -> str:
+    """Cacheable system prompt for re-prompting one field of existing content."""
+    return (
+        "You revise a SINGLE field of already-written murder-mystery content on request.\n"
+        "Rules:\n"
+        "- Rewrite ONLY the requested field. Never invent or alter any other field.\n"
+        "- Stay strictly consistent with the surrounding context (names, roles, the "
+        "killer's identity, established facts and the mystery's tone).\n"
+        "- Match the length, register and point of view of the original field.\n"
+        "- Respond with ONLY valid JSON of the form {\"value\": <new value>} — no markdown, "
+        "no commentary. If the field is a list, \"value\" is an array of strings; otherwise a string."
+    )
+
+
+def regenerate_field_user_message(
+    field: str, context: dict, guidance: str | None, language: str, is_list: bool
+) -> str:
+    expected = "an array of strings" if is_list else "a single string"
+    instruction = (
+        f"AUTHOR INSTRUCTION (apply this): {guidance}"
+        if guidance and guidance.strip()
+        else "Produce a fresh alternative that still fits the context."
+    )
+    return (
+        f"FIELD TO REWRITE: {field}\n"
+        f"EXPECTED VALUE TYPE: {expected}\n\n"
+        "SURROUNDING CONTEXT (canonical — do not contradict):\n"
+        f"{json.dumps(context, ensure_ascii=False)}\n\n"
+        f"{instruction}\n\n"
+        "Return ONLY JSON: {\"value\": ...}"
+        + language_directive(language)
+    )
 
 
 def _blueprint_context(skeleton: dict) -> dict:
@@ -100,7 +249,7 @@ def blueprint_context_message(skeleton: dict) -> str:
     )
 
 
-def dossier_user_message(character: dict) -> str:
+def dossier_user_message(character: dict, language: str = "en") -> str:
     """Per-character instruction: which character to expand and their canonical brief."""
     payload = {
         "id": character.get("id"),
@@ -121,6 +270,7 @@ def dossier_user_message(character: dict) -> str:
     return (
         f"Write the full dossier for this character:\n{json.dumps(payload, ensure_ascii=False)}\n\n"
         f"{killer_note}"
+        + language_directive(language)
     )
 
 

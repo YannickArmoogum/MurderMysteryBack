@@ -39,8 +39,19 @@ output "frontend_bucket" {
 }
 
 output "frontend_url" {
-  description = "Public HTTPS URL of the frontend (CloudFront)."
-  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  description = "Public HTTPS URL of the frontend (custom domain if set, else CloudFront)."
+  value       = local.enable_custom_domain ? "https://${var.domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+}
+
+output "acm_certificate_validation_records" {
+  description = "DNS records to add at your provider when using EXTERNAL DNS (empty when Route 53 automates it)."
+  value = local.enable_custom_domain && !local.enable_route53 ? [
+    for dvo in aws_acm_certificate.frontend[0].domain_validation_options : {
+      name  = dvo.resource_record_name
+      type  = dvo.resource_record_type
+      value = dvo.resource_record_value
+    }
+  ] : []
 }
 
 output "cloudfront_distribution_id" {

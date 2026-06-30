@@ -8,13 +8,13 @@ router = APIRouter(prefix="/api/themes")
 
 
 @router.get("", operation_id="listThemes")
-def list_themes(session: Session = Depends(get_session)):
-    return ThemesRepository(session).get_all()
+def list_themes(lang: str = "en", session: Session = Depends(get_session)):
+    return ThemesRepository(session).list_localized(lang)
 
 
 @router.get("/{theme_id}", operation_id="getTheme")
-def get_theme(theme_id: str, session: Session = Depends(get_session)):
-    theme = ThemesRepository(session).get_by_id(theme_id)
+def get_theme(theme_id: str, lang: str = "en", session: Session = Depends(get_session)):
+    theme = ThemesRepository(session).get_localized(theme_id, lang)
     if not theme:
         raise HTTPException(status_code=404, detail="Theme not found")
     return theme

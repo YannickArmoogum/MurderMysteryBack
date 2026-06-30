@@ -15,35 +15,56 @@ from db.models import Theme, Difficulty, Tone, Setting, Scenario
 
 # ── Themes (merged from the Angular frontend + prompts) ──────────────────────
 THEMES = [
-    Theme(id="aristocratic-ball",   label="Aristocratic Masked Ball",      era="Belle Époque · 1895",       icon="🎭", setting="Château de Villeneuve, Paris"),
-    Theme(id="speakeasy-1920",      label="1920s Speakeasy",               era="Prohibition Era · 1928",    icon="🥃", setting="The Blue Moon Club, Chicago"),
-    Theme(id="luxury-yacht",        label="Luxury Yacht Party",            era="Contemporary · Present Day", icon="⚓", setting="The Empress, Mediterranean Sea"),
-    Theme(id="alpine-chalet",       label="Alpine Chalet Retreat",         era="Contemporary · Winter",     icon="🏔️", setting="Chalet Blanc, Swiss Alps"),
-    Theme(id="italian-wedding",     label="Italian Wedding in Tuscany",    era="Contemporary · Summer",     icon="💒", setting="Villa Rosso, Tuscany"),
-    Theme(id="tech-summit",         label="Billionaire Tech Summit",       era="Near Future · 2031",        icon="💻", setting="The Nexus Tower, Silicon Valley"),
-    Theme(id="art-auction",         label="Art Auction Night",             era="Contemporary · Present Day", icon="🖼️", setting="Galerie Noir, New York"),
-    Theme(id="royal-family",        label="Royal Family Gathering",        era="Contemporary · Present Day", icon="👑", setting="Ashford Palace, England"),
-    Theme(id="film-festival",       label="Film Festival Premiere",        era="1940s Hollywood · 1947",    icon="🎬", setting="Beverly Hills Mansion"),
-    Theme(id="champagne-estate",    label="Champagne Vineyard Estate",     era="Contemporary · Autumn",     icon="🍷", setting="Domaine de la Lune, Champagne"),
-    Theme(id="victorian-manor",     label="Victorian Manor",               era="Victorian Era · 1889",      icon="🏰", setting="Blackwood Manor, English Countryside"),
-    Theme(id="haunted-manor",       label="Haunted Victorian Manor",       era="Gothic · 1871",             icon="🕯️", setting="Ravenshollow, Dartmoor"),
-    Theme(id="destination-wedding", label="Destination Wedding Mauritius", era="Contemporary · Present Day", icon="🌴", setting="Grand Baie Estate, Mauritius"),
-    Theme(id="political-gala",      label="Political Fundraising Gala",    era="Contemporary · Present Day", icon="🏛️", setting="The Capitol Grand Ballroom"),
+    Theme(id="aristocratic-ball",   label="Aristocratic Masked Ball",      era="Belle Époque · 1895",        icon="🎭", setting="Château de Villeneuve, Paris",
+          label_fr="Bal masqué aristocratique",          era_fr="Belle Époque · 1895",             setting_fr="Château de Villeneuve, Paris"),
+    Theme(id="speakeasy-1920",      label="1920s Speakeasy",               era="Prohibition Era · 1928",     icon="🥃", setting="The Blue Moon Club, Chicago",
+          label_fr="Bar clandestin des années 1920",     era_fr="Époque de la Prohibition · 1928", setting_fr="Le Blue Moon Club, Chicago"),
+    Theme(id="luxury-yacht",        label="Luxury Yacht Party",            era="Contemporary · Present Day", icon="⚓", setting="The Empress, Mediterranean Sea",
+          label_fr="Soirée sur yacht de luxe",           era_fr="Contemporain · Aujourd’hui",      setting_fr="L’Empress, mer Méditerranée"),
+    Theme(id="alpine-chalet",       label="Alpine Chalet Retreat",         era="Contemporary · Winter",      icon="🏔️", setting="Chalet Blanc, Swiss Alps",
+          label_fr="Retraite au chalet alpin",           era_fr="Contemporain · Hiver",            setting_fr="Chalet Blanc, Alpes suisses"),
+    Theme(id="italian-wedding",     label="Italian Wedding in Tuscany",    era="Contemporary · Summer",      icon="💒", setting="Villa Rosso, Tuscany",
+          label_fr="Mariage italien en Toscane",         era_fr="Contemporain · Été",              setting_fr="Villa Rosso, Toscane"),
+    Theme(id="tech-summit",         label="Billionaire Tech Summit",       era="Near Future · 2031",         icon="💻", setting="The Nexus Tower, Silicon Valley",
+          label_fr="Sommet tech de milliardaires",       era_fr="Futur proche · 2031",             setting_fr="La Tour Nexus, Silicon Valley"),
+    Theme(id="art-auction",         label="Art Auction Night",             era="Contemporary · Present Day", icon="🖼️", setting="Galerie Noir, New York",
+          label_fr="Soirée de vente aux enchères d’art", era_fr="Contemporain · Aujourd’hui",      setting_fr="Galerie Noir, New York"),
+    Theme(id="royal-family",        label="Royal Family Gathering",        era="Contemporary · Present Day", icon="👑", setting="Ashford Palace, England",
+          label_fr="Réunion de famille royale",          era_fr="Contemporain · Aujourd’hui",      setting_fr="Palais d’Ashford, Angleterre"),
+    Theme(id="film-festival",       label="Film Festival Premiere",        era="1940s Hollywood · 1947",     icon="🎬", setting="Beverly Hills Mansion",
+          label_fr="Première au festival du film",       era_fr="Hollywood des années 1940 · 1947", setting_fr="Manoir de Beverly Hills"),
+    Theme(id="champagne-estate",    label="Champagne Vineyard Estate",     era="Contemporary · Autumn",      icon="🍷", setting="Domaine de la Lune, Champagne",
+          label_fr="Domaine viticole en Champagne",      era_fr="Contemporain · Automne",          setting_fr="Domaine de la Lune, Champagne"),
+    Theme(id="victorian-manor",     label="Victorian Manor",               era="Victorian Era · 1889",       icon="🏰", setting="Blackwood Manor, English Countryside",
+          label_fr="Manoir victorien",                   era_fr="Époque victorienne · 1889",       setting_fr="Manoir de Blackwood, campagne anglaise"),
+    Theme(id="haunted-manor",       label="Haunted Victorian Manor",       era="Gothic · 1871",              icon="🕯️", setting="Ravenshollow, Dartmoor",
+          label_fr="Manoir victorien hanté",             era_fr="Gothique · 1871",                 setting_fr="Ravenshollow, Dartmoor"),
+    Theme(id="destination-wedding", label="Destination Wedding Mauritius", era="Contemporary · Present Day", icon="🌴", setting="Grand Baie Estate, Mauritius",
+          label_fr="Mariage à l’île Maurice",            era_fr="Contemporain · Aujourd’hui",      setting_fr="Domaine de Grand Baie, île Maurice"),
+    Theme(id="political-gala",      label="Political Fundraising Gala",    era="Contemporary · Present Day", icon="🏛️", setting="The Capitol Grand Ballroom",
+          label_fr="Gala de collecte de fonds politique", era_fr="Contemporain · Aujourd’hui",     setting_fr="Grande salle de bal du Capitole"),
 ]
 
 # ── Difficulties ─────────────────────────────────────────────────────────────
 DIFFICULTIES = [
-    Difficulty(id="casual",      label="Casual",      description="Light misdirection. One obvious red herring. Clues are fairly clear."),
-    Difficulty(id="challenging", label="Challenging", description="Two red herrings. Clues require cross-referencing. Moderate ambiguity."),
-    Difficulty(id="expert",      label="Expert",      description="Heavy misdirection. Multiple red herrings. Every character looks guilty."),
+    Difficulty(id="casual",      label="Casual",      description="Light misdirection. One obvious red herring. Clues are fairly clear.",
+               label_fr="Détendu",   description_fr="Fausse piste légère. Un leurre évident. Les indices sont assez clairs."),
+    Difficulty(id="challenging", label="Challenging", description="Two red herrings. Clues require cross-referencing. Moderate ambiguity.",
+               label_fr="Difficile", description_fr="Deux fausses pistes. Les indices doivent être recoupés. Ambiguïté modérée."),
+    Difficulty(id="expert",      label="Expert",      description="Heavy misdirection. Multiple red herrings. Every character looks guilty.",
+               label_fr="Expert",    description_fr="Forte intoxication. Plusieurs fausses pistes. Chaque personnage semble coupable."),
 ]
 
 # ── Tones ────────────────────────────────────────────────────────────────────
 TONES = [
-    Tone(id="dramatic",  label="Dramatic",  description="Grand emotions, moral weight, Shakespearean betrayals."),
-    Tone(id="dark",      label="Dark",      description="Psychological menace, dark secrets, grim atmosphere."),
-    Tone(id="romantic",  label="Romantic",  description="Passion, jealousy, forbidden love triangles drive the plot."),
-    Tone(id="satirical", label="Satirical", description="Sharp wit, social critique, absurd privilege exposed."),
+    Tone(id="dramatic",  label="Dramatic",  description="Grand emotions, moral weight, Shakespearean betrayals.",
+         label_fr="Dramatique", description_fr="Grandes émotions, poids moral, trahisons shakespeariennes."),
+    Tone(id="dark",      label="Dark",      description="Psychological menace, dark secrets, grim atmosphere.",
+         label_fr="Sombre",     description_fr="Menace psychologique, secrets sombres, atmosphère lugubre."),
+    Tone(id="romantic",  label="Romantic",  description="Passion, jealousy, forbidden love triangles drive the plot.",
+         label_fr="Romantique", description_fr="Passion, jalousie, triangles amoureux interdits au cœur de l’intrigue."),
+    Tone(id="satirical", label="Satirical", description="Sharp wit, social critique, absurd privilege exposed.",
+         label_fr="Satirique",  description_fr="Esprit mordant, critique sociale, privilèges absurdes mis à nu."),
 ]
 
 # ── App settings ─────────────────────────────────────────────────────────────
